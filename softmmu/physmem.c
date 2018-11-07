@@ -46,6 +46,7 @@
 #include "qemu/log.h"
 #include "qemu/memalign.h"
 #include "exec/memory.h"
+#include "exec/memory-remap.h"
 #include "exec/ioport.h"
 #include "sysemu/dma.h"
 #include "sysemu/hostmem.h"
@@ -2037,6 +2038,38 @@ RAMBlock *qemu_ram_alloc_user_backed(ram_addr_t size, MemoryRegion *mr,
         return NULL;
     }
     return new_block;
+}
+
+static void qemu_user_backed_ram_map_empty(uint64_t gpa, void *hva, uint64_t size, int flags)
+{
+    g_error("FATAL: Did not set ram map function before mapping");
+    abort();
+}
+
+static void qemu_user_backed_ram_unmap_empty(uint64_t gpa, uint64_t size)
+{
+    g_error("FATAL: Did not set ram unmap function before unmapping");
+    abort();
+}
+
+static QemuUserBackedRamMapFunc s_user_backed_ram_map = &qemu_user_backed_ram_map_empty;
+static QemuUserBackedRamUnmapFunc s_user_backed_ram_unmap = &qemu_user_backed_ram_unmap_empty;
+
+void qemu_set_user_backed_mapping_funcs(QemuUserBackedRamMapFunc mapFunc,
+                                        QemuUserBackedRamUnmapFunc unmapFunc)
+{
+    s_user_backed_ram_map = mapFunc;
+    s_user_backed_ram_unmap = unmapFunc;
+}
+
+void qemu_user_backed_ram_map(uint64_t gpa, void *hva, uint64_t size, int flags)
+{
+    s_user_backed_ram_map(gpa, hva, size, flags);
+}
+
+void qemu_user_backed_ram_unmap(uint64_t gpa, uint64_t size)
+{
+    s_user_backed_ram_unmap(gpa, size);
 }
 
 static void reclaim_ramblock(RAMBlock *block)

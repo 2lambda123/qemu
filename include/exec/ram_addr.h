@@ -136,6 +136,12 @@ RAMBlock *qemu_ram_alloc_resizeable(ram_addr_t size, ram_addr_t max_size,
 RAMBlock *qemu_ram_alloc_user_backed(ram_addr_t size, MemoryRegion *mr,
                                      Error **errp);
 
+typedef void (*QemuUserBackedRamMapFunc)(uint64_t gpa, void* hva, uint64_t size, int flags);
+typedef void (*QemuUserBackedRamUnmapFunc)(uint64_t gpa, uint64_t size);
+
+void qemu_set_user_backed_mapping_funcs(QemuUserBackedRamMapFunc mapFunc,
+                                        QemuUserBackedRamUnmapFunc unmapFunc);
+
 void qemu_ram_free(RAMBlock *block);
 
 int qemu_ram_resize(RAMBlock *block, ram_addr_t newsize, Error **errp);
