@@ -1973,7 +1973,7 @@ static void ram_block_add(RAMBlock *new_block, Error **errp)
     qemu_mutex_lock_ramlist();
     new_block->offset = find_ram_offset(new_block->max_length);
 
-    if (!new_block->host) {
+    if (!new_block->host && !(new_block->flags & RAM_USER_BACKED)) {
         if (xen_enabled()) {
             xen_ram_alloc(new_block->offset, new_block->max_length,
                           new_block->mr, &err);
@@ -2196,6 +2196,31 @@ RAMBlock *qemu_ram_alloc_resizeable(ram_addr_t size, ram_addr_t maxsz,
 {
     return qemu_ram_alloc_internal(size, maxsz, resized, NULL,
                                    RAM_RESIZEABLE, mr, errp);
+}
+
+RAMBlock *qemu_ram_alloc_user_backed(ram_addr_t size, MemoryRegion *mr,
+                                     Error **errp)
+{
+    RAMBlock *new_block;
+    Error *local_err = NULL;
+
+    size = HOST_PAGE_ALIGN(size);
+    new_block = (RAMBlock*)g_malloc0(sizeof(*new_block));
+    new_block->mr = mr;
+    new_block->used_length = size;
+    new_block->max_length = size;
+    new_block->fd = -1;
+    new_block->page_size = getpagesize();
+    new_block->host = NULL;
+    new_block->flags |= RAM_PREALLOC;
+    new_block->flags |= RAM_USER_BACKED;
+    ram_block_add(new_block, &local_err);
+    if (local_err) {
+        g_free(new_block);
+        error_propagate(errp, local_err);
+        return NULL;
+    }
+    return new_block;
 }
 
 static void reclaim_ramblock(RAMBlock *block)

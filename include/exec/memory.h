@@ -188,6 +188,8 @@ typedef struct IOMMUTLBEvent {
 /* RAM is a persistent kind memory */
 #define RAM_PMEM (1 << 5)
 
+/* RAM backing is managed by user */
+#define RAM_USER_BACKED (1 << 6)
 
 /*
  * UFFDIO_WRITEPROTECT is used on this RAMBlock to
@@ -737,6 +739,7 @@ struct MemoryRegion {
     bool nonvolatile;
     bool rom_device;
     bool flush_coalesced_mmio;
+    bool user_backed;
     uint8_t dirty_log_mask;
     bool is_iommu;
     RAMBlock *ram_block;
@@ -1510,6 +1513,16 @@ void memory_region_init_ram(MemoryRegion *mr,
                             Error **errp);
 
 /**
+ * memory_region_init_ram_user_backed - Initialize RAM memory region where
+ * the allocation is dynamically managed by the user.
+ * Accesses into the region will modify memory directly.
+ */
+void memory_region_init_ram_user_backed(MemoryRegion *mr,
+                                        Object *owner,
+                                        const char *name,
+                                        uint64_t size);
+
+/**
  * memory_region_init_rom: Initialize a ROM memory region.
  *
  * This has the same effect as calling memory_region_init_ram()
@@ -1594,6 +1607,21 @@ uint64_t memory_region_size(MemoryRegion *mr);
 static inline bool memory_region_is_ram(MemoryRegion *mr)
 {
     return mr->ram;
+}
+
+/**
+ * memory_region_is_user_backed: check whether a memory region is random access
+ *
+ * Returns %true if a memory region's backing
+ * is user managed. This allows hypervisor to avoid
+ * directly adding the region on initialization,
+ * which can be a fatal error.
+ *
+ * @mr: the memory region being queried
+ */
+static inline bool memory_region_is_user_backed(MemoryRegion *mr)
+{
+    return mr->user_backed;
 }
 
 /**
