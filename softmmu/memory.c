@@ -1744,6 +1744,23 @@ void memory_region_init_iommu(void *_iommu_mr,
     iommu_mr->iommu_notify_flags = IOMMU_NOTIFIER_NONE;
 }
 
+void memory_region_init_ram_user_backed(MemoryRegion *mr,
+                                        Object *owner,
+                                        const char *name,
+                                        uint64_t size)
+{
+    DeviceState* owner_dev;
+    memory_region_init(mr, owner, name, size);
+    mr->ram = true;
+    mr->user_backed = true;
+    mr->terminates = true;
+    mr->destructor = memory_region_destructor_ram;
+    mr->dirty_log_mask = tcg_enabled() ? (1 << DIRTY_MEMORY_CODE) : 0;
+    mr->ram_block = qemu_ram_alloc_user_backed(size, mr, &error_fatal);
+    owner_dev = DEVICE(owner);
+    vmstate_register_ram(mr, owner_dev);
+}
+
 static void memory_region_finalize(Object *obj)
 {
     MemoryRegion *mr = MEMORY_REGION(obj);
