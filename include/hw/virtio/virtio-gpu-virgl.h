@@ -65,6 +65,9 @@ typedef void (*virgl_renderer_ctx_detach_resource_t)(
 typedef int (*virgl_renderer_resource_get_info_t)(
     int res_handle,
     struct virgl_renderer_resource_info *info);
+typedef int (*virgl_renderer_resource_create_v2_t)(unsigned int res_handle, uint64_t hvaId);
+typedef int (*virgl_renderer_resource_map_t)(unsigned int res_handle, void** hvaOut, uint64_t* sizeOut);
+typedef int (*virgl_renderer_resource_unmap_t)(unsigned int res_handle);
 
 #define LIST_VIRGLRENDERER_API(f) \
 f(virgl_renderer_init) \
@@ -86,6 +89,9 @@ f(virgl_renderer_force_ctx_0) \
 f(virgl_renderer_ctx_attach_resource) \
 f(virgl_renderer_ctx_detach_resource) \
 f(virgl_renderer_resource_get_info) \
+f(virgl_renderer_resource_create_v2) \
+f(virgl_renderer_resource_map) \
+f(virgl_renderer_resource_unmap) \
 
 #define VIRGLRENDERER_API_DEFINE_STRUCT_FIELD(api) \
     api##_t api;

@@ -34,6 +34,7 @@ struct VirtIOGPUPCIBase {
 #define DEFINE_VIRTIO_GPU_PCI_PROPERTIES(_state)                \
     DEFINE_PROP_BIT("ioeventfd", _state, flags,                 \
                     VIRTIO_PCI_FLAG_USE_IOEVENTFD_BIT, false),  \
+    DEFINE_PROP_BIT("hostshm", _state, flags, VIRTIO_PCI_FLAG_HOSTSHM_BIT, true), \
         DEFINE_PROP_UINT32("vectors", _state, nvectors, 3)
 
 #endif /* HW_VIRTIO_GPU_PCI_H */

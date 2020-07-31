@@ -214,6 +214,7 @@ struct VirtIOGPUGL {
     bool renderer_inited;
     bool renderer_reset;
     struct virgl_renderer_virtio_interface* virgl;
+    MemoryRegion host_coherent_memory;
 };
 
 struct VhostUserGPU {
