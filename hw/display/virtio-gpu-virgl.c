@@ -325,19 +325,20 @@ static void virgl_resource_attach_backing(VirtIOGPU *g,
     struct iovec *res_iovs;
     uint32_t res_niov;
     int ret;
+    uint64_t* addrs;
 
     VIRTIO_GPU_FILL_CMD(att_rb);
     trace_virtio_gpu_cmd_res_back_attach(att_rb.resource_id);
 
     ret = virtio_gpu_create_mapping_iov(g, att_rb.nr_entries, sizeof(att_rb),
-                                        cmd, NULL, &res_iovs, &res_niov);
+                                        cmd, &addrs, &res_iovs, &res_niov);
     if (ret != 0) {
         cmd->error = VIRTIO_GPU_RESP_ERR_UNSPEC;
         return;
     }
 
-    ret = gl->virgl->virgl_renderer_resource_attach_iov(att_rb.resource_id,
-                                                        res_iovs, res_niov);
+    ret = gl->virgl->virgl_renderer_resource_attach_iov_with_addrs(att_rb.resource_id,
+                                                        res_iovs, res_niov, addrs);
 
     if (ret != 0)
         virtio_gpu_cleanup_mapping_iov(g, res_iovs, res_niov);
@@ -889,6 +890,66 @@ int virtio_gpu_virgl_get_num_capsets(VirtIOGPU *g)
 }
 
 #ifdef CONFIG_ANDROID
+void virtio_gpu_save_ram_slots(void* qemufile, VirtIOGPU* g) {
+    struct VirtioGpuRamSlotTable* table = virtio_gpu_ram_slot_table_get();
+    QEMUFile* file = (QEMUFile*)qemufile;
+
+    qemu_put_be32(file, VIRTIO_GPU_MAX_RAM_SLOTS);
+    for (int i = 0 ; i < VIRTIO_GPU_MAX_RAM_SLOTS; ++i) {
+        qemu_put_be32(file, table->slots[i].used);
+        qemu_put_be64(file, table->slots[i].gpa);
+        qemu_put_be64(file, table->slots[i].offset);
+        qemu_put_be64(file, table->slots[i].size);
+        qemu_put_be32(file, table->slots[i].resource_id);
+    }
+}
+
+static void virtio_gpu_clear_slots() {
+    struct VirtioGpuRamSlotTable* table = virtio_gpu_ram_slot_table_get();
+
+    for (int i = 0; i < VIRTIO_GPU_MAX_RAM_SLOTS; ++i) {
+        if (0 == table->slots[i].used) continue;
+        qemu_user_backed_ram_unmap(table->slots[i].gpa, table->slots[i].size);
+        table->slots[i].used = 0;
+    }
+}
+
+void virtio_gpu_load_ram_slots(void* qemufile, VirtIOGPU* g) {
+    VirtIOGPUGL *gl = VIRTIO_GPU_GL(g);
+    QEMUFile* file = (QEMUFile*)qemufile;
+    struct VirtioGpuRamSlotTable* table = virtio_gpu_ram_slot_table_get();
+
+    virtio_gpu_clear_slots();
+
+    uint32_t count = qemu_get_be32(file);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        table->slots[i].used = qemu_get_be32(file);
+        table->slots[i].gpa = qemu_get_be64(file);
+        table->slots[i].offset = qemu_get_be64(file);
+        table->slots[i].size = qemu_get_be64(file);
+        table->slots[i].resource_id = qemu_get_be32(file);
+
+        if (!table->slots[i].used) continue;
+
+        void* hva;
+        uint64_t size;
+
+        gl->virgl->virgl_renderer_resource_map(table->slots[i].resource_id, &hva, &size);
+
+        if (size != table->slots[i].size) {
+            fprintf(stderr, "%s: resource %u: fatal: size in renderer (0x%llx) did not match slot size (0x%llx)\n", __func__,
+                    table->slots[i].resource_id,
+                    (unsigned long long)size,
+                    (unsigned long long)table->slots[i].size);
+            abort();
+        }
+        qemu_user_backed_ram_map(
+            table->slots[i].gpa,
+            hva, size, USER_BACKED_RAM_FLAGS_READ | USER_BACKED_RAM_FLAGS_WRITE);
+    }
+}
+
 static void proxy_virgl_write_fence(void *opaque, uint32_t fence) {
     VirtIOGPU *g = opaque;
     struct virtio_gpu_ctrl_command *cmd, *tmp;

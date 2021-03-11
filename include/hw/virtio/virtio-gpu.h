@@ -298,4 +298,9 @@ void virtio_gpu_virgl_reset(VirtIOGPU *g);
 int virtio_gpu_virgl_init(VirtIOGPU *g);
 int virtio_gpu_virgl_get_num_capsets(VirtIOGPU *g);
 
+#ifdef CONFIG_ANDROID
+void virtio_gpu_save_ram_slots(void* qemufile, VirtIOGPU* g);
+void virtio_gpu_load_ram_slots(void* qemufile, VirtIOGPU* g);
+#endif
+
 #endif

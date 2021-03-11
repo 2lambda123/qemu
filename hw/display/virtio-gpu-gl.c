@@ -108,6 +108,42 @@ static void virtio_gpu_gl_reset(VirtIODevice *vdev)
     }
 }
 
+static int virtio_gpu_gl_save(QEMUFile *f, void *opaque, size_t size,
+                              const VMStateField *field, JSONWriter *vmdesc)
+{
+    VirtIOGPU *g = opaque;
+    VirtIOGPUGL *gl = VIRTIO_GPU_GL(g);
+
+    if (gl->virgl->virgl_renderer_save_snapshot) {
+        // First save the renderer state, then the ram slots, because when we
+        // load, the renderer state and host pointers backing blob resources
+        // need to be restored first before the ram slots corresponding to the
+        // blob resources themselves.
+        gl->virgl->virgl_renderer_save_snapshot(f);
+#ifdef CONFIG_ANDROID
+        virtio_gpu_save_ram_slots(f, g);
+#endif
+    }
+
+    return virtio_gpu_save(f, opaque, size, field, vmdesc);
+}
+
+static int virtio_gpu_gl_load(QEMUFile *f, void *opaque, size_t size,
+                              const VMStateField *field)
+{
+    VirtIOGPU *g = opaque;
+    VirtIOGPUGL *gl = VIRTIO_GPU_GL(g);
+
+    if (gl->virgl->virgl_renderer_load_snapshot) {
+        gl->virgl->virgl_renderer_load_snapshot(f);
+#ifdef CONFIG_ANDROID
+        virtio_gpu_load_ram_slots(f, g);
+#endif
+    }
+
+    return virtio_gpu_load(f, opaque, size, field);
+}
+
 static void virtio_gpu_gl_device_realize(DeviceState *qdev, Error **errp)
 {
     VirtIOGPU *g = VIRTIO_GPU(qdev);
@@ -165,6 +201,8 @@ static void virtio_gpu_gl_class_init(ObjectClass *klass, void *data)
     vgc->handle_ctrl = virtio_gpu_gl_handle_ctrl;
     vgc->process_cmd = virtio_gpu_virgl_process_cmd;
     vgc->update_cursor_data = virtio_gpu_gl_update_cursor_data;
+    vgc->gpu_save = virtio_gpu_gl_save;
+    vgc->gpu_load = virtio_gpu_gl_load;
 
     vdc->realize = virtio_gpu_gl_device_realize;
     vdc->reset = virtio_gpu_gl_reset;

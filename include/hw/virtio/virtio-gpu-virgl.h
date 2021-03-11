@@ -68,6 +68,10 @@ typedef int (*virgl_renderer_resource_get_info_t)(
 typedef int (*virgl_renderer_resource_create_v2_t)(unsigned int res_handle, uint64_t hvaId);
 typedef int (*virgl_renderer_resource_map_t)(unsigned int res_handle, void** hvaOut, uint64_t* sizeOut);
 typedef int (*virgl_renderer_resource_unmap_t)(unsigned int res_handle);
+typedef void (*virgl_renderer_save_snapshot_t)(void* qemufile);
+typedef void (*virgl_renderer_load_snapshot_t)(void* qemufile);
+typedef int (*virgl_renderer_resource_attach_iov_with_addrs_t)(
+    int res_handle, struct iovec *iov, int num_iovs, uint64_t* addrs);
 
 #define LIST_VIRGLRENDERER_API(f) \
 f(virgl_renderer_init) \
@@ -92,6 +96,9 @@ f(virgl_renderer_resource_get_info) \
 f(virgl_renderer_resource_create_v2) \
 f(virgl_renderer_resource_map) \
 f(virgl_renderer_resource_unmap) \
+f(virgl_renderer_save_snapshot) \
+f(virgl_renderer_load_snapshot) \
+f(virgl_renderer_resource_attach_iov_with_addrs) \
 
 #define VIRGLRENDERER_API_DEFINE_STRUCT_FIELD(api) \
     api##_t api;

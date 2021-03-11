@@ -1304,29 +1304,31 @@ int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
         resource_id = qemu_get_be32(f);
     }
 
-    /* load & apply scanout state */
+    /* load scanout state */
     vmstate_load_state(f, &vmstate_virtio_gpu_scanouts, g, 1);
-    for (i = 0; i < g->parent_obj.conf.max_outputs; i++) {
-        scanout = &g->parent_obj.scanout[i];
-        if (!scanout->resource_id) {
-            continue;
-        }
-        res = virtio_gpu_find_resource(g, scanout->resource_id);
-        if (!res) {
-            return -EINVAL;
-        }
-        scanout->ds = qemu_create_displaysurface_pixman(res->image);
-        if (!scanout->ds) {
-            return -EINVAL;
-        }
 
-        dpy_gfx_replace_surface(scanout->con, scanout->ds);
-        dpy_gfx_update_full(scanout->con);
-        if (scanout->cursor.resource_id) {
-            update_cursor(g, &scanout->cursor);
-        }
-        res->scanout_bitmask |= (1 << i);
-    }
+    // TODO: Figure out why this hangs the emulator display and causes ANR in the current app.
+    // for (i = 0; i < g->conf.max_outputs; i++) {
+    //     scanout = &g->scanout[i];
+    //     if (!scanout->resource_id) {
+    //         continue;
+    //     }
+    //     res = virtio_gpu_find_resource(g, scanout->resource_id);
+    //     if (!res) {
+    //         return -EINVAL;
+    //     }
+    //     scanout->ds = qemu_create_displaysurface_pixman(res->image);
+    //     if (!scanout->ds) {
+    //         return -EINVAL;
+    //     }
+
+    //     dpy_gfx_replace_surface(scanout->con, scanout->ds);
+    //     dpy_gfx_update(scanout->con, 0, 0, scanout->width, scanout->height);
+    //     if (scanout->cursor.resource_id) {
+    //         update_cursor(g, &scanout->cursor);
+    //     }
+    //     res->scanout_bitmask |= (1 << i);
+    // }
 
     return 0;
 }
