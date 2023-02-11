@@ -144,6 +144,13 @@ static void virgl_cmd_resource_flush(VirtIOGPU *g,
             continue;
         }
         virtio_gpu_rect_update(g, i, rf.r.x, rf.r.y, rf.r.width, rf.r.height);
+#ifdef CONFIG_ANDROID
+        if (i == 0 && virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+            stream_renderer_flush_resource_and_readback(rf.resource_id, rf.r.x, rf.r.y,
+                                                        rf.r.width, rf.r.height,
+                                                        NULL, 0);
+        }
+#endif
     }
 }
 
@@ -197,12 +204,14 @@ static void virgl_cmd_set_scanout(VirtIOGPU *g,
     if (ss.resource_id && ss.r.width && ss.r.height) {
         qemu_console_resize(g->parent_obj.scanout[ss.scanout_id].con,
                             ss.r.width, ss.r.height);
-        virgl_renderer_force_ctx_0();
-        dpy_gl_scanout_texture(
-            g->parent_obj.scanout[ss.scanout_id].con, ss.resource_id,
-            virgl_borrow_texture_for_scanout,
-            ss.r.x, ss.r.y, ss.r.width, ss.r.height);
-    } else {
+        gl->virgl->virgl_renderer_force_ctx_0();
+        if (!virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+            dpy_gl_scanout_texture(
+                g->parent_obj.scanout[ss.scanout_id].con, ss.resource_id,
+                virgl_borrow_texture_for_scanout,
+                ss.r.x, ss.r.y, ss.r.width, ss.r.height);
+        }
+    } else if (!virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
         dpy_gfx_replace_surface(
             g->parent_obj.scanout[ss.scanout_id].con, NULL);
         dpy_gl_scanout_disable(g->parent_obj.scanout[ss.scanout_id].con);
@@ -557,6 +566,12 @@ virgl_create_context(void *opaque, int scanout_idx,
     qparams.major_ver = params->major_ver;
     qparams.minor_ver = params->minor_ver;
 
+    if (virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+        fprintf(stderr, "%s: error: tried to use "
+                "standard 3d cbs in proxy mode\n", __func__);
+        abort();
+    }
+
     ctx = dpy_gl_ctx_create(g->parent_obj.scanout[scanout_idx].con, &qparams);
     return (virgl_renderer_gl_context)ctx;
 }
@@ -566,6 +581,12 @@ static void virgl_destroy_context(void *opaque, virgl_renderer_gl_context ctx)
     VirtIOGPU *g = opaque;
     QEMUGLContext qctx = (QEMUGLContext)ctx;
 
+    if (virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+        fprintf(stderr, "%s: error: tried to use "
+                "standard 3d cbs in proxy mode\n", __func__);
+        abort();
+    }
+
     dpy_gl_ctx_destroy(g->parent_obj.scanout[0].con, qctx);
 }
 
@@ -574,6 +595,12 @@ static int virgl_make_context_current(void *opaque, int scanout_idx,
 {
     VirtIOGPU *g = opaque;
     QEMUGLContext qctx = (QEMUGLContext)ctx;
+
+    if (virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+        fprintf(stderr, "%s: error: tried to use "
+                "standard 3d cbs in proxy mode\n", __func__);
+        abort();
+    }
 
     return dpy_gl_ctx_make_current(g->parent_obj.scanout[scanout_idx].con,
                                    qctx);
@@ -628,6 +655,10 @@ void virtio_gpu_virgl_reset_scanout(VirtIOGPU *g)
 {
     int i;
 
+    if (virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+        return;
+    }
+
     for (i = 0; i < g->parent_obj.conf.max_outputs; i++) {
         dpy_gfx_replace_surface(g->parent_obj.scanout[i].con, NULL);
         dpy_gl_scanout_disable(g->parent_obj.scanout[i].con);
@@ -647,7 +678,14 @@ int virtio_gpu_virgl_init(VirtIOGPU *g)
 {
     int ret;
 
-    ret = virgl_renderer_init(g, 0, &virtio_gpu_3d_cbs);
+#ifdef CONFIG_ANDROID
+    if (virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+        ret = virgl_renderer_init(g, 0, &proxy_3d_cbs);
+    } else
+#endif
+    {
+        ret = virgl_renderer_init(g, 0, &virtio_gpu_3d_cbs);
+    }
     if (ret != 0) {
         error_report("virgl could not be initialized: %d", ret);
         return ret;
@@ -673,6 +711,55 @@ int virtio_gpu_virgl_get_num_capsets(VirtIOGPU *g)
 
     return capset2_max_ver ? 2 : 1;
 }
+
+#ifdef CONFIG_ANDROID
+static void proxy_virgl_write_fence(void *opaque, uint32_t fence) {
+    VirtIOGPU *g = opaque;
+    struct virtio_gpu_ctrl_command *cmd, *tmp;
+
+    QTAILQ_FOREACH_SAFE(cmd, &g->fenceq, next, tmp) {
+        /*
+         * the guest can end up emitting fences out of order
+         * so we should check all fenced cmds not just the first one.
+         */
+        if (cmd->cmd_hdr.fence_id > fence) {
+            continue;
+        }
+        trace_virtio_gpu_fence_resp(cmd->cmd_hdr.fence_id);
+        virtio_gpu_ctrl_response_nodata(g, cmd, VIRTIO_GPU_RESP_OK_NODATA);
+        QTAILQ_REMOVE(&g->fenceq, cmd, next);
+        g_free(cmd);
+        g->inflight--;
+        if (virtio_gpu_stats_enabled(g->parent_obj.conf)) {
+            fprintf(stderr, "inflight: %3d (-)\r", g->inflight);
+        }
+    }
+}
+
+static virgl_renderer_gl_context
+proxy_virgl_create_context(void *opaque, int scanout_idx,
+                     struct virgl_renderer_gl_ctx_param *params)
+{
+    return (virgl_renderer_gl_context)0;
+}
+
+static void proxy_virgl_destroy_context(
+    void *opaque, virgl_renderer_gl_context ctx) { }
+
+static int proxy_virgl_make_context_current(
+    void *opaque, int scanout_idx, virgl_renderer_gl_context ctx) { return 0; }
+
+static struct virgl_renderer_callbacks proxy_3d_cbs = {
+    .version             = 1,
+    .write_fence         = proxy_virgl_write_fence,
+    .create_gl_context   = proxy_virgl_create_context,
+    .destroy_gl_context  = proxy_virgl_destroy_context,
+    .make_current        = proxy_virgl_make_context_current,
+#ifdef VIRGL_RENDERER_UNSTABLE_APIS
+    .write_context_fence = NULL,
+#endif
+};
+#endif
 
 static struct virgl_renderer_virtio_interface default_virtio_interface = {
     .virgl_renderer_init = virgl_renderer_init,

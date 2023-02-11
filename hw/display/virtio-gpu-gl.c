@@ -18,6 +18,9 @@
 #include "qapi/error.h"
 #include "sysemu/sysemu.h"
 #include "hw/virtio/virtio.h"
+#ifdef CONFIG_ANDROID
+#include "hw/virtio/virtio-goldfish-pipe.h"
+#endif
 #include "hw/virtio/virtio-gpu.h"
 #include "hw/virtio/virtio-gpu-bswap.h"
 #include "hw/virtio/virtio-gpu-pixman.h"
@@ -125,6 +128,11 @@ static void virtio_gpu_gl_device_realize(DeviceState *qdev, Error **errp)
         return;
     }
 
+#ifdef CONFIG_ANDROID
+    if (virtio_gpu_goldfish_pipe_enabled(g->parent_obj.conf)) {
+        gl->virgl = get_goldfish_pipe_virgl_renderer_virtio_interface();
+    } else
+#endif
     {
         gl->virgl = get_default_virtio_interface();
     }
@@ -139,6 +147,10 @@ static void virtio_gpu_gl_device_realize(DeviceState *qdev, Error **errp)
 static Property virtio_gpu_gl_properties[] = {
     DEFINE_PROP_BIT("stats", VirtIOGPU, parent_obj.conf.flags,
                     VIRTIO_GPU_FLAG_STATS_ENABLED, false),
+#ifdef CONFIG_ANDROID
+    DEFINE_PROP_BIT("goldfish-pipe", VirtIOGPU, parent_obj.conf.flags,
+                    VIRTIO_GPU_FLAG_GOLDFISH_PIPE_ENABLED, false),
+#endif
     DEFINE_PROP_END_OF_LIST(),
 };
 
