@@ -28,6 +28,15 @@ extern bool hvf_allowed;
 #define hvf_get_supported_cpuid(func, idx, reg) 0
 #endif /* !CONFIG_HVF */
 
+void* hvf_gpa2hva(uint64_t gpa, bool* found);
+int hvf_hva2gpa(void* hva, uint64_t length, int max,
+                uint64_t* gpa, uint64_t* size);
+
+int hvf_map_safe(void* hva, uint64_t gpa, uint64_t size, uint64_t flags);
+int hvf_unmap_safe(uint64_t gpa, uint64_t size);
+int hvf_protect_safe(uint64_t gpa, uint64_t size, uint64_t flags);
+int hvf_remap_safe(void* hva, uint64_t gpa, uint64_t size, uint64_t flags);
+
 #endif /* NEED_CPU_H */
 
 #define TYPE_HVF_ACCEL ACCEL_CLASS_NAME("hvf")
