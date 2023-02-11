@@ -35,7 +35,6 @@ typedef struct hvf_slot {
     uint8_t *mem;
     int slot_id;
     uint32_t flags;
-    MemoryRegion *region;
 } hvf_slot;
 
 typedef struct hvf_vcpu_caps {
