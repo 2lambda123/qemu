@@ -1174,8 +1174,17 @@ static const VMStateDescription vmstate_virtio_gpu_scanouts = {
     },
 };
 
-static int virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
-                           const VMStateField *field, JSONWriter *vmdesc)
+static int _virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
+                            const VMStateField *field, JSONWriter *vmdesc)
+{
+    VirtIOGPU *g = opaque;
+    VirtIOGPUClass *vgc = VIRTIO_GPU_GET_CLASS(g);
+
+    return vgc->gpu_save(f, opaque, size, field, vmdesc);
+}
+
+int virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
+                    const VMStateField *field, JSONWriter *vmdesc)
 {
     VirtIOGPU *g = opaque;
     struct virtio_gpu_simple_resource *res;
@@ -1202,8 +1211,17 @@ static int virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
     return vmstate_save_state(f, &vmstate_virtio_gpu_scanouts, g, NULL);
 }
 
-static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
-                           const VMStateField *field)
+static int _virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
+                            const VMStateField *field)
+{
+    VirtIOGPU *g = opaque;
+    VirtIOGPUClass *vgc = VIRTIO_GPU_GET_CLASS(g);
+
+    return vgc->gpu_load(f, opaque, size, field);
+}
+
+int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
+                    const VMStateField *field)
 {
     VirtIOGPU *g = opaque;
     struct virtio_gpu_simple_resource *res;
@@ -1410,8 +1428,8 @@ static const VMStateDescription vmstate_virtio_gpu = {
             .name = "virtio-gpu",
             .info = &(const VMStateInfo) {
                         .name = "virtio-gpu",
-                        .get = virtio_gpu_load,
-                        .put = virtio_gpu_save,
+                        .get = _virtio_gpu_load,
+                        .put = _virtio_gpu_save,
             },
             .flags = VMS_SINGLE,
         } /* device */,
@@ -1438,6 +1456,8 @@ static void virtio_gpu_class_init(ObjectClass *klass, void *data)
     vgc->handle_ctrl = virtio_gpu_handle_ctrl;
     vgc->process_cmd = virtio_gpu_simple_process_cmd;
     vgc->update_cursor_data = virtio_gpu_update_cursor_data;
+    vgc->gpu_save = virtio_gpu_save;
+    vgc->gpu_load = virtio_gpu_load;
     vgbc->gl_flushed = virtio_gpu_handle_gl_flushed;
 
     vdc->realize = virtio_gpu_device_realize;

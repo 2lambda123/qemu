@@ -199,6 +199,10 @@ struct VirtIOGPUClass {
     void (*update_cursor_data)(VirtIOGPU *g,
                                struct virtio_gpu_scanout *s,
                                uint32_t resource_id);
+    int (*gpu_save)(QEMUFile *f, void *opaque, size_t size,
+                    const VMStateField *field, JSONWriter *vmdesc);
+    int (*gpu_load)(QEMUFile *f, void *opaque, size_t size,
+                    const VMStateField *field);
 };
 
 struct VirtIOGPUGL {
@@ -265,6 +269,10 @@ void virtio_gpu_simple_process_cmd(VirtIOGPU *g, struct virtio_gpu_ctrl_command 
 void virtio_gpu_update_cursor_data(VirtIOGPU *g,
                                    struct virtio_gpu_scanout *s,
                                    uint32_t resource_id);
+int virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
+                    const VMStateField *field, JSONWriter *vmdesc);
+int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
+                    const VMStateField *field);
 
 /* virtio-gpu-udmabuf.c */
 bool virtio_gpu_have_udmabuf(void);
