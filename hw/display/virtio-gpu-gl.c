@@ -23,16 +23,17 @@
 #include "hw/virtio/virtio-gpu-pixman.h"
 #include "hw/qdev-properties.h"
 
-#include <virglrenderer.h>
+#include "hw/virtio/virtio-gpu-virgl.h"
 
 static void virtio_gpu_gl_update_cursor_data(VirtIOGPU *g,
                                              struct virtio_gpu_scanout *s,
                                              uint32_t resource_id)
 {
+    VirtIOGPUGL *gl = VIRTIO_GPU_GL(g);
     uint32_t width, height;
     uint32_t pixels, *data;
 
-    data = virgl_renderer_get_cursor_data(resource_id, &width, &height);
+    data = gl->virgl->virgl_renderer_get_cursor_data(resource_id, &width, &height);
     if (!data) {
         return;
     }
@@ -107,6 +108,7 @@ static void virtio_gpu_gl_reset(VirtIODevice *vdev)
 static void virtio_gpu_gl_device_realize(DeviceState *qdev, Error **errp)
 {
     VirtIOGPU *g = VIRTIO_GPU(qdev);
+    VirtIOGPUGL *gl = VIRTIO_GPU_GL(qdev);
 
 #if HOST_BIG_ENDIAN
     error_setg(errp, "virgl is not supported on bigendian platforms");
@@ -121,6 +123,10 @@ static void virtio_gpu_gl_device_realize(DeviceState *qdev, Error **errp)
     if (!display_opengl) {
         error_setg(errp, "opengl is not available");
         return;
+    }
+
+    {
+        gl->virgl = get_default_virtio_interface();
     }
 
     g->parent_obj.conf.flags |= (1 << VIRTIO_GPU_FLAG_VIRGL_ENABLED);
