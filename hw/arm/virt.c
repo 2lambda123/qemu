@@ -1729,7 +1729,7 @@ static void virt_set_high_memmap(VirtMachineState *vms,
 
     for (i = VIRT_LOWMEMMAP_LAST; i < ARRAY_SIZE(extended_memmap); i++) {
         region_enabled = virt_get_high_memmap_enabled(vms, i);
-        region_base = ROUND_UP(base, extended_memmap[i].size);
+        region_base = ROUND_UP(base, 0x4000);
         region_size = extended_memmap[i].size;
 
         vms->memmap[i].base = region_base;
@@ -1808,9 +1808,11 @@ static void virt_set_memmap(VirtMachineState *vms, int pa_bits)
         error_report("maxmem/slots too huge");
         exit(EXIT_FAILURE);
     }
+    /*
     if (base < vms->memmap[VIRT_MEM].base + LEGACY_RAMLIMIT_BYTES) {
         base = vms->memmap[VIRT_MEM].base + LEGACY_RAMLIMIT_BYTES;
     }
+    */
 
     /* We know for sure that at least the memory fits in the PA space */
     vms->highest_gpa = memtop - 1;
