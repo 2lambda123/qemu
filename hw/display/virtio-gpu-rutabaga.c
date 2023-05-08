@@ -8,6 +8,7 @@
 #include "hw/virtio/virtio-gpu.h"
 #include "hw/virtio/virtio-gpu-pixman.h"
 #include "hw/virtio/virtio-iommu.h"
+#include "exec/memory-remap.h"
 
 #include <rutabaga_gfx/rutabaga_gfx_ffi.h>
 
@@ -30,6 +31,91 @@ static int virtio_gpu_rutabaga_init(VirtIOGPU *g);
     } while (0)
 
 #define CHECK_RESULT(result, cmd) CHECK(result == 0, cmd)
+
+#define VIRTIO_GPU_MAX_RAM_SLOTS 2048
+
+struct VirtioGpuRamSlotInfo {
+    uint64_t gpa;
+    uint64_t size;
+    uint32_t resource_id;
+    int used;
+};
+
+struct VirtioGpuRamSlotTable {
+    struct VirtioGpuRamSlotInfo slots[VIRTIO_GPU_MAX_RAM_SLOTS];
+};
+
+static struct VirtioGpuRamSlotTable *virtio_gpu_ram_slot_table_get(void)
+{
+    static struct VirtioGpuRamSlotTable *s_table;
+    if (!s_table) {
+        struct VirtioGpuRamSlotTable *table =
+            (struct VirtioGpuRamSlotTable *)malloc(sizeof(*table));
+        memset(table, 0, sizeof(*table));
+        s_table = table;
+    }
+    return s_table;
+}
+
+static int virtio_gpu_ram_slot_infos_first_free_slot()
+{
+    struct VirtioGpuRamSlotTable *table = virtio_gpu_ram_slot_table_get();
+
+    for (int i = 0; i < VIRTIO_GPU_MAX_RAM_SLOTS; ++i) {
+        if (0 == table->slots[i].used) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void virtio_gpu_map_slot(
+    MemoryRegion *parent, uint32_t resource_id,
+    uint64_t offset, void *hva, uint64_t size, int flags) {
+
+    struct VirtioGpuRamSlotTable *table = virtio_gpu_ram_slot_table_get();
+    int slot = virtio_gpu_ram_slot_infos_first_free_slot();
+
+    uint64_t host_coherent_start =
+        object_property_get_uint(OBJECT(parent), "addr", NULL);
+    uint64_t gpa = host_coherent_start + offset;
+
+    if (slot < 0) {
+        fprintf(stderr, "%s: error: no free slots to "
+                "map hva %p -> gpa [0x%llx 0x%llx)\n", __func__,
+                hva, (unsigned long long)gpa, (unsigned long long)gpa + size);
+        return;
+    }
+
+    qemu_user_backed_ram_map(gpa, hva, size,
+                             USER_BACKED_RAM_FLAGS_READ |
+                             USER_BACKED_RAM_FLAGS_WRITE);
+
+    table->slots[slot].gpa = gpa;
+    table->slots[slot].size = size;
+    table->slots[slot].used = 1;
+    table->slots[slot].resource_id = resource_id;
+}
+
+static void virtio_gpu_unmap_slot(
+    MemoryRegion *parent, uint32_t resource_id) {
+
+    struct VirtioGpuRamSlotTable *table = virtio_gpu_ram_slot_table_get();
+
+    for (int i = 0; i < VIRTIO_GPU_MAX_RAM_SLOTS; ++i) {
+        if (0 == table->slots[i].used) {
+            continue;
+        }
+        if (resource_id != table->slots[i].resource_id) {
+            continue;
+        }
+
+        qemu_user_backed_ram_unmap(table->slots[i].gpa, table->slots[i].size);
+        table->slots[i].used = 0;
+
+        return;
+    }
+}
 
 struct rutabaga_aio_data {
     struct VirtIOGPUGL *virtio_gpu;
@@ -163,6 +249,9 @@ static int32_t rutabaga_handle_unmap(VirtIOGPU *g,
 {
     GET_VIRTIO_GPU_GL(g);
     GET_RUTABAGA(virtio_gpu);
+
+    virtio_gpu_unmap_slot(&g->parent_obj.hostmem,
+                          res->resource_id);
 
     res->mapped = NULL;
     return rutabaga_resource_unmap(rutabaga, res->resource_id);
@@ -630,7 +719,7 @@ rutabaga_cmd_resource_create_blob(VirtIOGPU *g,
     QTAILQ_INSERT_HEAD(&g->reslist, res, next);
 
     res->resource_id = cblob.resource_id;
-    res->blob_size = cblob.size;
+    res->blob_size = ROUND_UP(cblob.size, qemu_real_host_page_size());
 
     if (cblob.blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D) {
         result = virtio_gpu_create_mapping_iov(g, cblob.nr_entries,
@@ -642,7 +731,7 @@ rutabaga_cmd_resource_create_blob(VirtIOGPU *g,
     rc_blob.blob_id = cblob.blob_id;
     rc_blob.blob_mem = cblob.blob_mem;
     rc_blob.blob_flags = cblob.blob_flags;
-    rc_blob.size = cblob.size;
+    rc_blob.size = res->blob_size;
 
     vecs.iovecs = res->iov;
     vecs.num_iovecs = res->iov_cnt;
@@ -670,11 +759,21 @@ rutabaga_cmd_resource_map_blob(VirtIOGPU *g,
 
     CHECK(mblob.resource_id != 0, cmd);
 
+    /* ensure page alignment with host */
+    CHECK((mblob.offset & qemu_real_host_page_mask()) == mblob.offset, cmd);
+
     res = virtio_gpu_find_resource(g, mblob.resource_id);
     CHECK(res, cmd);
 
     result = rutabaga_resource_map(rutabaga, mblob.resource_id, &mapping);
     CHECK_RESULT(result, cmd);
+
+    virtio_gpu_map_slot(&g->parent_obj.hostmem,
+                        mblob.resource_id,
+                        mblob.offset,
+                        (void *)mapping.ptr,
+                        mapping.size,
+                        0xff /* flags, unused */);
 
     memset(&resp, 0, sizeof(resp));
     resp.hdr.type = VIRTIO_GPU_RESP_OK_MAP_INFO;
