@@ -219,7 +219,7 @@ void tpm_crb_reset(TPMCRBState *s, uint64_t baseaddr)
 void tpm_crb_init_memory(Object *obj, TPMCRBState *s, Error **errp)
 {
     memory_region_init_rom_device(&s->mmio, obj, &tpm_crb_memory_ops, s,
-        "tpm-crb-mmio", TPM_CRB_ADDR_SIZE, errp);
+        "tpm-crb-mmio", ROUND_UP(TPM_CRB_ADDR_SIZE, qemu_host_page_size), errp);
     if (s->ppi_enabled) {
         tpm_ppi_init_memory(&s->ppi, obj);
     }
