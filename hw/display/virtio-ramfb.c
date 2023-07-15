@@ -142,7 +142,7 @@ static void virtio_ramfb_base_class_init(ObjectClass *klass, void *data)
                                   &v->parent_reset);
 
     k->realize = virtio_ramfb_realize;
-    pcidev_k->class_id = PCI_CLASS_DISPLAY_OTHER;
+    pcidev_k->class_id = PCI_CLASS_DISPLAY_VGA;
 }
 
 static const TypeInfo virtio_ramfb_base_info = {
